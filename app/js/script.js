@@ -1,142 +1,187 @@
+// app/js/script.js
 import {
     HandLandmarker,
-    FilesetResolver
-} from "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.0";
-import {
-    DrawingUtils
-} from "https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js";
-
-// Access HAND_CONNECTIONS globally available from the <script> tag in HTML
-// import { HAND_CONNECTIONS } from "https://cdn.jsdelivr.net/npm/@mediapipe/hands";
-
-const imageContainers = document.querySelectorAll("#image-demos .position-relative img");
-const webcamButton = document.getElementById("webcamButton");
-const video = document.getElementById("webcam");
-const canvasElementWebcam = document.getElementById("output_canvas_webcam");
-const canvasCtxWebcam = canvasElementWebcam.getContext("2d");
-
-let handLandmarker = undefined;
-let runningMode = "IMAGE";
-let webcamRunning = false;
-
-// Initialize the DrawingUtils for drawing the landmarks.
-const drawingUtils = new DrawingUtils(canvasCtxWebcam);
-
-const createHandLandmarker = async () => {
+    FilesetResolver,
+  } from "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@latest";
+  
+  // Define hand connections manually
+  const HAND_CONNECTIONS = [
+    [0, 1], [1, 2], [2, 3], [3, 4],
+    [0, 5], [5, 6], [6, 7], [7, 8],
+    [5, 9], [9, 10], [10, 11], [11, 12],
+    [9, 13], [13, 14], [14, 15], [15, 16],
+    [13, 17], [17, 18], [18, 19], [19, 20],
+    [0, 17]
+  ];
+  
+  let handLandmarker;
+  let runningMode = "VIDEO";
+  let enableCamButton;
+  let cameraSelect;
+  let webcamRunning = false;
+  let video;
+  let canvasElement;
+  let canvasCtx;
+  let lastVideoTime = -1;
+  let results = undefined;
+  let currentStream;
+  let selectedDeviceId;
+  
+  async function initHandLandmarker() {
+    console.log("🛠️ Initializing HandLandmarker...");
     const vision = await FilesetResolver.forVisionTasks(
-        "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.0/wasm"
+      "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@latest/wasm"
     );
     handLandmarker = await HandLandmarker.createFromOptions(vision, {
-        baseOptions: {
-            modelAssetPath: `https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task`,
-            delegate: "GPU"
-        },
-        runningMode: runningMode,
-        numHands: 2
+      baseOptions: {
+        modelAssetPath: "https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task",
+        delegate: "GPU"
+      },
+      runningMode: runningMode,
+      numHands: 1
     });
-    console.log("Hand Landmarker loaded!");
-};
-createHandLandmarker();
-
-async function detectHands(event) {
-    if (!handLandmarker) {
-        console.log("Wait for handLandmarker to load before clicking!");
-        return;
+    console.log("✅ HandLandmarker initialized!");
+  }
+  
+  async function populateCameraList() {
+    const devices = await navigator.mediaDevices.enumerateDevices();
+    const videoDevices = devices.filter(device => device.kind === "videoinput");
+  
+    cameraSelect.innerHTML = "";
+    videoDevices.forEach((device, index) => {
+      const option = document.createElement("option");
+      option.value = device.deviceId;
+      option.text = device.label || `Camera ${index + 1}`;
+      cameraSelect.appendChild(option);
+    });
+  
+    if (videoDevices.length > 0) {
+      selectedDeviceId = videoDevices[0].deviceId;
     }
-
-    const image = event.target;
-    const canvasId = image.nextElementSibling.id;
-    const canvas = document.getElementById(canvasId);
-    const canvasCtx = canvas.getContext("2d");
-
-    canvas.width = image.naturalWidth;
-    canvas.height = image.naturalHeight;
-    canvas.style.width = image.width + "px";
-    canvas.style.height = image.height + "px";
-
-    const handLandmarkerResult = handLandmarker.detect(image);
-
-    canvasCtx.clearRect(0, 0, canvas.width, canvas.height);
-    if (handLandmarkerResult.landmarks) {
-        for (const landmarks of handLandmarkerResult.landmarks) {
-            drawingUtils.drawConnectors(canvasCtx, landmarks, HAND_CONNECTIONS, {
-                color: "#00FF00",
-                lineWidth: 5
-            });
-            drawingUtils.drawLandmarks(canvasCtx, landmarks, {
-                color: "#FF0000",
-                lineWidth: 2
-            });
-        }
+  }
+  
+  async function setupCamera() {
+    console.log("📸 Setting up camera...");
+  
+    if (currentStream) {
+      currentStream.getTracks().forEach(track => track.stop());
     }
-}
-
-const hasGetUserMedia = () => !!navigator.mediaDevices?.getUserMedia;
-
-if (hasGetUserMedia()) {
-    webcamButton.addEventListener("click", enableCam);
-} else {
-    console.warn("getUserMedia() is not supported by your browser");
-}
-
-function enableCam() {
-    if (!handLandmarker) {
-        console.log("Wait! Hand Landmarker not loaded yet.");
-        return;
+  
+    video = document.getElementById("webcam");
+    canvasElement = document.getElementById("output_canvas");
+    canvasCtx = canvasElement.getContext("2d");
+  
+    const constraints = {
+      video: {
+        deviceId: selectedDeviceId ? { exact: selectedDeviceId } : undefined
+      }
+    };
+  
+    currentStream = await navigator.mediaDevices.getUserMedia(constraints);
+    video.srcObject = currentStream;
+  
+    video.addEventListener("loadeddata", predictWebcam);
+  }
+  
+  async function predictWebcam() {
+    canvasElement.style.width = `${video.videoWidth}px`;
+    canvasElement.style.height = `${video.videoHeight}px`;
+    canvasElement.width = video.videoWidth;
+    canvasElement.height = video.videoHeight;
+  
+    if (lastVideoTime !== video.currentTime) {
+      lastVideoTime = video.currentTime;
+      results = handLandmarker.detectForVideo(video, performance.now());
+  
+      console.log("🎯 Detection Results:", results);
     }
-
-    if (runningMode === "IMAGE") {
-        runningMode = "VIDEO";
-        handLandmarker.setOptions({ runningMode: "VIDEO" });
-    }
-
-    if (webcamRunning) {
-        webcamRunning = false;
-        webcamButton.innerText = "Enable Webcam";
-        const stream = video.srcObject as MediaStream;
-        if (stream) {
-            stream.getTracks().forEach(track => track.stop());
-        }
-        video.srcObject = null;
+  
+    canvasCtx.save();
+    canvasCtx.clearRect(0, 0, canvasElement.width, canvasElement.height);
+  
+    if (results && results.landmarks && results.landmarks.length > 0) {
+      console.log("🖐️ Landmarks detected:", results.landmarks);
+  
+      for (const landmarks of results.landmarks) {
+        drawConnectors(canvasCtx, landmarks, HAND_CONNECTIONS, {
+          color: "lime",
+          lineWidth: 2,
+        });
+  
+        drawLandmarks(canvasCtx, landmarks, {
+          color: "red",
+          lineWidth: 3,
+        });
+      }
     } else {
+      console.log("⚠️ No landmarks detected!");
+    }
+    canvasCtx.restore();
+  
+    if (webcamRunning) {
+      window.requestAnimationFrame(predictWebcam);
+    }
+  }
+  
+  document.addEventListener("DOMContentLoaded", async () => {
+    console.log("🧠 DOM Ready!");
+    enableCamButton = document.getElementById("enableCam");
+    cameraSelect = document.getElementById("cameraSelect");
+  
+    await initHandLandmarker();
+    await populateCameraList();
+  
+    cameraSelect.addEventListener("change", async () => {
+      selectedDeviceId = cameraSelect.value;
+      if (webcamRunning) {
+        await setupCamera();
+      }
+    });
+  
+    enableCamButton.addEventListener("click", async () => {
+      if (!webcamRunning) {
+        console.log("▶️ Starting Webcam...");
         webcamRunning = true;
-        webcamButton.innerText = "Disable Webcam";
-        navigator.mediaDevices.getUserMedia({ video: true })
-            .then((stream) => {
-                video.srcObject = stream;
-                video.addEventListener("loadeddata", predictWebcam);
-            })
-            .catch((error) => {
-                console.error("Error accessing webcam:", error);
-            });
-    }
-}
-
-let lastVideoTime = -1;
-async function predictWebcam() {
-    if (!webcamRunning) return; // Stop if webcam is not running
-
-    canvasElementWebcam.width = video.videoWidth;
-    canvasElementWebcam.height = video.videoHeight;
-    canvasCtxWebcam.clearRect(0, 0, canvasElementWebcam.width, canvasElementWebcam.height);
-
-    if (handLandmarker && video.readyState >= 2) {
-        const nowInMs = Date.now();
-        const results = handLandmarker.detectForVideo(video, nowInMs);
-
-        if (results.landmarks) {
-            for (const landmarks of results.landmarks) {
-                drawingUtils.drawConnectors(canvasCtxWebcam, landmarks, HAND_CONNECTIONS, {
-                    color: "#00FF00",
-                    lineWidth: 5
-                });
-                drawingUtils.drawLandmarks(canvasCtxWebcam, landmarks, {
-                    color: "#FF0000",
-                    lineWidth: 2
-                });
-            }
+        enableCamButton.innerText = "Disable Camera";
+        await setupCamera();
+        video.style.display = "block";
+        canvasElement.style.display = "block";
+      } else {
+        console.log("⏹️ Stopping Webcam...");
+        webcamRunning = false;
+        enableCamButton.innerText = "Enable Camera";
+        if (video.srcObject) {
+          video.srcObject.getTracks().forEach(track => track.stop());
         }
+        video.style.display = "none";
+        canvasElement.style.display = "none";
+      }
+    });
+  });
+  
+  // === DRAW FUNCTIONS ===
+  
+  function drawLandmarks(ctx, landmarks, options = {}) {
+    const { color = 'red', lineWidth = 3 } = options;
+    ctx.fillStyle = color;
+    for (const landmark of landmarks) {
+      ctx.beginPath();
+      ctx.arc(landmark.x * canvasElement.width, landmark.y * canvasElement.height, lineWidth, 0, 2 * Math.PI);
+      ctx.fill();
     }
-
-    window.requestAnimationFrame(predictWebcam);
-}
+  }
+  
+  function drawConnectors(ctx, landmarks, connections, options = {}) {
+    const { color = 'lime', lineWidth = 2 } = options;
+    ctx.strokeStyle = color;
+    ctx.lineWidth = lineWidth;
+    for (const [startIdx, endIdx] of connections) {
+      const start = landmarks[startIdx];
+      const end = landmarks[endIdx];
+      ctx.beginPath();
+      ctx.moveTo(start.x * canvasElement.width, start.y * canvasElement.height);
+      ctx.lineTo(end.x * canvasElement.width, end.y * canvasElement.height);
+      ctx.stroke();
+    }
+  }
+  
