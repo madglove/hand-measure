@@ -26,11 +26,10 @@
             
         <main class="row mt-1 g-3" id="main-content">
             <h1>Webcam Hand Tracking</h1>
-            <div class="mt-3">
-                <label for="cameraSelect" class="form-label">Select Camera:</label>
-                <select id="cameraSelect" class="form-select"></select>
-            </div>
             <button id="enableCam" class="btn btn-primary mt-3">Enable Camera</button>
+            <div id="switchCamButtonContainer" class="mt-3" style="display: none;">
+                <button id="switchCamButton" class="btn btn-secondary">Switch Camera</button>
+            </div>
             <div class="position-relative mt-3">
                 <video id="webcam" class="w-100" autoplay playsinline style="display: none;"></video>
                 <canvas id="output_canvas" class="position-absolute top-0 start-0 w-100 h-100" style="display: none;"></canvas>
