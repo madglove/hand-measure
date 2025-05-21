@@ -238,7 +238,7 @@ async function predictWebcam() {
     }
   }
 
-  // Draw object detection results (bounding boxes and labels for "cell phone").
+  // Draw object detection results (bounding boxes and labels for "cell phone")
   if (objectResults && objectResults.detections && objectResults.detections.length > 0) {
     for (const detection of objectResults.detections) {
       const bbox = detection.boundingBox;
@@ -252,7 +252,8 @@ async function predictWebcam() {
       // Draw label (category name and confidence score).
       if (categories && categories.length > 0) {
         const category = categories[0];
-        const label = `${category.categoryName} (${(category.score * 100).toFixed(1)}%)`;
+        // Changed the label text from category.categoryName to "Card"
+        const label = `Card (${(category.score * 100).toFixed(1)}%)`;
         canvasCtx.fillStyle = "blue";
         canvasCtx.font = "16px Arial";
         // Position the text slightly above the bounding box.
