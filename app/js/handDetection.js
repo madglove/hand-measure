@@ -24,6 +24,7 @@ let handLandmarker;
 let objectDetector;
 let runningMode = "VIDEO"; // Set MediaPipe running mode to video for continuous detection.
 let enableCamButton; // Reference to the main "Enable/Disable Camera" button.
+let cameraSelect; // Reference to the camera selection dropdown.
 let webcamRunning = false; // Boolean to track if the webcam is active.
 let video; // Reference to the video HTML element.
 let canvasElement; // Reference to the canvas HTML element.
@@ -32,16 +33,11 @@ let lastVideoTime = -1; // Stores the last video timestamp to prevent redundant 
 let handResults = undefined; // Stores the latest hand detection results.
 let objectResults = undefined; // Stores the latest object detection results.
 let currentStream; // Stores the current MediaStream from the webcam.
+let selectedDeviceId; // Stores the device ID of the currently selected camera.
 
 // Variables to track last detected states for console output, preventing spam.
 let lastHandDetectedState = false;
 let lastCellPhoneDetectedState = false;
-
-// Global variables for camera management.
-let availableVideoDevices = []; // Stores a list of all available video input devices.
-let currentCameraIndex = 0; // Index of the currently active camera in `availableVideoDevices`.
-let switchCamButton; // Reference to the "Switch Camera" button.
-let switchCamButtonContainer; // Reference to the container of the "Switch Camera" button.
 
 // Global variable for frame skipping to optimize performance.
 let frameCount = 0;
@@ -81,22 +77,52 @@ async function initModels() {
 }
 
 /**
- * Populates the `availableVideoDevices` array with all detected video input devices.
- * This function does not interact with the DOM directly.
+ * Populates the cameraSelect dropdown with available video input devices.
  */
 async function populateCameraList() {
   try {
     const devices = await navigator.mediaDevices.enumerateDevices();
-    availableVideoDevices = devices.filter(device => device.kind === "videoinput");
+    const videoDevices = devices.filter(device => device.kind === "videoinput");
+
+    cameraSelect.innerHTML = ""; // Clear existing options.
+    if (videoDevices.length === 0) {
+        const option = document.createElement("option");
+        option.value = "";
+        option.text = "No cameras found";
+        cameraSelect.appendChild(option);
+        cameraSelect.disabled = true; // Disable dropdown if no cameras.
+        enableCamButton.disabled = true; // Disable enable button.
+        displayMessageBox("No camera devices found. Please connect a camera.");
+        return;
+    }
+
+    cameraSelect.disabled = false; // Enable dropdown.
+    enableCamButton.disabled = false; // Enable enable button.
+
+    videoDevices.forEach((device, index) => {
+      const option = document.createElement("option");
+      option.value = device.deviceId;
+      option.text = device.label || `Camera ${index + 1}`;
+      cameraSelect.appendChild(option);
+    });
+
+    // Set the initial selected device to the first one found.
+    if (videoDevices.length > 0) {
+      selectedDeviceId = videoDevices[0].deviceId;
+      cameraSelect.value = selectedDeviceId; // Ensure the dropdown reflects the selection.
+    }
   } catch (error) {
     console.error("Error enumerating media devices:", error);
     displayMessageBox("Error accessing camera devices. Please check permissions.");
+    cameraSelect.innerHTML = "<option value=''>Error loading cameras</option>";
+    cameraSelect.disabled = true;
+    enableCamButton.disabled = true;
   }
 }
 
 /**
  * Sets up the camera stream using `getUserMedia` and starts the prediction loop.
- * It uses the device ID from `availableVideoDevices` at `currentCameraIndex`.
+ * It uses the device ID from `selectedDeviceId`.
  */
 async function setupCamera() {
   // Stop any existing camera stream.
@@ -109,25 +135,21 @@ async function setupCamera() {
   canvasElement = document.getElementById("output_canvas");
   canvasCtx = canvasElement.getContext("2d");
 
-  // If no video devices are available, display an error and exit.
-  if (availableVideoDevices.length === 0) {
-    console.error("No video input devices found.");
-    displayMessageBox("No camera devices found. Please connect a camera.");
+  // If no device is selected, display an error and exit.
+  if (!selectedDeviceId) {
+    console.error("No camera selected.");
+    displayMessageBox("Please select a camera from the dropdown.");
     webcamRunning = false;
     enableCamButton.innerText = "Enable Camera";
     video.style.display = "none";
     canvasElement.style.display = "none";
-    if (switchCamButtonContainer) switchCamButtonContainer.style.display = 'none';
     return;
   }
-
-  // Get the device ID of the camera to use based on `currentCameraIndex`.
-  const deviceIdToUse = availableVideoDevices[currentCameraIndex].deviceId;
 
   // Define video constraints for `getUserMedia`.
   const constraints = {
     video: {
-      deviceId: { exact: deviceIdToUse }, // Use the exact device ID for the selected camera.
+      deviceId: { exact: selectedDeviceId }, // Use the exact device ID for the selected camera.
       width: { ideal: 640 }, // Request ideal width for performance.
       height: { ideal: 480 } // Request ideal height for performance.
     }
@@ -146,14 +168,6 @@ async function setupCamera() {
     video.style.display = "block";
     canvasElement.style.display = "block";
 
-    // Show the "Switch Camera" button if more than one camera is available.
-    if (availableVideoDevices.length > 1 && switchCamButtonContainer) {
-      switchCamButtonContainer.style.display = 'block';
-    } else if (switchCamButtonContainer) {
-      // Hide the button if only one or no cameras are available.
-      switchCamButtonContainer.style.display = 'none';
-    }
-
     webcamRunning = true; // Update webcam running state.
     enableCamButton.innerText = "Disable Camera"; // Update the main button text.
   } catch (error) {
@@ -167,7 +181,6 @@ async function setupCamera() {
     enableCamButton.innerText = "Enable Camera";
     video.style.display = "none";
     canvasElement.style.display = "none";
-    if (switchCamButtonContainer) switchCamButtonContainer.style.display = 'none';
   }
 }
 
@@ -300,52 +313,45 @@ function displayMessageBox(message) {
     }, 5000);
 }
 
-/**
- * Switches to the next available camera device.
- */
-async function switchCamera() {
-    // Only switch if webcam is running and there's more than one camera.
-    if (!webcamRunning || availableVideoDevices.length <= 1) {
-        return;
-    }
-
-    // Increment camera index, looping back to 0 if it exceeds the array bounds.
-    currentCameraIndex = (currentCameraIndex + 1) % availableVideoDevices.length;
-    console.log(`Switching to camera: ${availableVideoDevices[currentCameraIndex].label || `Camera ${currentCameraIndex + 1}`}`);
-    await setupCamera(); // Re-setup the camera with the new device.
-}
-
 // Event listener for when the DOM is fully loaded.
 document.addEventListener("DOMContentLoaded", async () => {
   // Get references to the main UI elements.
   enableCamButton = document.getElementById("enableCam");
-  switchCamButtonContainer = document.getElementById("switchCamButtonContainer");
-  switchCamButton = document.getElementById("switchCamButton");
+  cameraSelect = document.getElementById("cameraSelect"); // Get reference to camera select dropdown.
 
   // Initialize MediaPipe models.
   await initModels();
   // Populate the list of available camera devices.
   await populateCameraList();
 
+  // Set up event listener for camera selection changes.
+  cameraSelect.addEventListener("change", async () => {
+    selectedDeviceId = cameraSelect.value; // Update selected device ID.
+    if (webcamRunning) {
+      // If camera is already running, switch to the newly selected camera.
+      await setupCamera();
+    }
+  });
+
   // Automatically enable the camera on page load if devices are found.
-  if (availableVideoDevices.length > 0) {
+  // This will use the default selected camera from populateCameraList.
+  if (cameraSelect.options.length > 0 && cameraSelect.value !== "") {
     await setupCamera();
   } else {
     // If no cameras are found on load, update button state and display an error message.
     webcamRunning = false;
     enableCamButton.innerText = "Enable Camera";
-    displayMessageBox("No camera devices found. Please connect a camera.");
   }
 
   // Event listener for the main "Enable/Disable Camera" button.
   enableCamButton.addEventListener("click", async () => {
     if (!webcamRunning) {
       // If camera is currently off, try to enable it.
-      if (availableVideoDevices.length === 0) {
-        // Re-populate camera list in case devices were connected after page load.
+      if (!selectedDeviceId) {
+        // If no camera is selected, try to repopulate the list in case devices were connected.
         await populateCameraList();
-        if (availableVideoDevices.length === 0) {
-          displayMessageBox("No camera devices found. Cannot enable camera.");
+        if (!selectedDeviceId) {
+          displayMessageBox("No camera selected or found. Cannot enable camera.");
           return;
         }
       }
@@ -359,7 +365,6 @@ document.addEventListener("DOMContentLoaded", async () => {
       }
       video.style.display = "none"; // Hide video element.
       canvasElement.style.display = "none"; // Hide canvas element.
-      if (switchCamButtonContainer) switchCamButtonContainer.style.display = 'none'; // Hide switch button.
 
       // Reset detection states and frame counter when camera is disabled.
       lastHandDetectedState = false;
@@ -367,11 +372,6 @@ document.addEventListener("DOMContentLoaded", async () => {
       frameCount = 0;
     }
   });
-
-  // Event listener for the new "Switch Camera" button.
-  if (switchCamButton) {
-    switchCamButton.addEventListener("click", switchCamera);
-  }
 });
 
 // === DRAW FUNCTIONS ===
