@@ -6,6 +6,9 @@ import {
   ObjectDetector
 } from "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@latest";
 
+// Import the measurement update function from the new file
+import { updateMeasurementDisplays } from "./measurement.js";
+
 // Hand connections
 const HAND_CONNECTIONS = [
   [0, 1], [1, 2], [2, 3], [3, 4],
@@ -174,61 +177,9 @@ async function predictWebcam() {
         lastCellPhoneDetectedState = cellPhoneCurrentlyDetected; // Update state for next frame
         // --- End Console Output Logic ---
 
-        // --- Conditional Measurement Logging (only when BOTH hand and cell phone are detected) ---
-        if (handCurrentlyDetected && cellPhoneCurrentlyDetected) {
-            const landmarks = handResults.landmarks[0]; // Assuming only one hand is detected (numHands: 1)
-            const bbox = objectResults.detections[0].boundingBox; // Assuming only one cell phone is detected
-
-            // Check if enough hand landmarks are available for calculations (at least landmark 17)
-            if (landmarks && landmarks.length >= 18) {
-
-                // Distance between Landmark 5 (base of index finger) and Landmark 17 (base of pinky finger)
-                const landmark5 = landmarks[5];
-                const landmark17 = landmarks[17];
-
-                // Convert normalized coordinates to pixel coordinates
-                const landmark5X_px = landmark5.x * canvasElement.width;
-                const landmark5Y_px = landmark5.y * canvasElement.height;
-                const landmark17X_px = landmark17.x * canvasElement.width;
-                const landmark17Y_px = landmark17.y * canvasElement.height;
-
-                const distance5To17 = Math.sqrt(
-                    Math.pow(landmark17X_px - landmark5X_px, 2) +
-                    Math.pow(landmark17Y_px - landmark5Y_px, 2)
-                );
-                console.log(`MEASUREMENT: Hand (5 to 17): ${distance5To17.toFixed(2)} pixels`);
-
-
-                // Distance between Landmark 0 (wrist) and Landmark 9 (base of middle finger)
-                const landmark0 = landmarks[0]; // Wrist
-                const landmark9 = landmarks[9]; // Base of middle finger
-
-                const landmark0X_px = landmark0.x * canvasElement.width;
-                const landmark0Y_px = landmark0.y * canvasElement.height;
-                const landmark9X_px = landmark9.x * canvasElement.width;
-                const landmark9Y_px = landmark9.y * canvasElement.height;
-
-                const distance0To9 = Math.sqrt(
-                    Math.pow(landmark9X_px - landmark0X_px, 2) +
-                    Math.pow(landmark9Y_px - landmark0Y_px, 2)
-                );
-                console.log(`MEASUREMENT: Hand (0 to 9): ${distance0To9.toFixed(2)} pixels`);
-
-            } else {
-                console.log("MEASUREMENT: Not enough hand landmarks for calculations.");
-            }
-
-            // Cell phone (card) bounding box dimensions
-            const width_px = bbox.width;
-            const height_px = bbox.height;
-
-            const longerSide = Math.max(width_px, height_px);
-            const shorterSide = Math.min(width_px, height_px);
-
-            console.log(`MEASUREMENT: Cell Phone Longer Side: ${longerSide.toFixed(2)} pixels`);
-            console.log(`MEASUREMENT: Cell Phone Shorter Side: ${shorterSide.toFixed(2)} pixels`);
-        }
-        // --- End Conditional Measurement Logging ---
+        // --- Call measurement update function from measurement.js ---
+        // This function will handle displaying the measurements on the page
+        updateMeasurementDisplays(handResults, objectResults, canvasElement.width, canvasElement.height);
     }
   }
 
